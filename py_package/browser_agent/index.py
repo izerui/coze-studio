@@ -43,6 +43,7 @@ import base64
 from langchain_core.language_models.chat_models import BaseChatModel
 from datetime import datetime
 from langchain_openai import ChatOpenAI
+from logging import Logger
 app = FastAPI()
 load_dotenv()
 
@@ -98,6 +99,7 @@ class RunBrowserUseAgentCtx(BaseModel):
     extend_prompt: str | None = None
     upload_service:Optional[UploadService] = None
     start_time:int = int(datetime.now().timestamp() * 1000)
+    logger: Logger = Field(default_factory=lambda: ctx.logger.getLogger(__name__))
     
 def genSSEData(stream_id:str,
                content:str,
@@ -177,7 +179,7 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
     task_id = str(uuid.uuid4())
     event_queue = asyncio.Queue(maxsize=100)
     # 初始化日志
-    logging.info(f"RunBrowserUseAgent with query: {ctx.query},task_id:{task_id}")
+    ctx.logger.info(f"RunBrowserUseAgent with query: {ctx.query},task_id:{task_id}")
     
     # 浏览器初始化
     try:
@@ -189,7 +191,7 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
         else:
             browser_wrapper = BrowserWrapper(None, None, None, 'id', ctx.browser_session_endpoint)
     except Exception as e:
-        logging.error(f"[Failed to initialize browser: {e}")
+        ctx.logger.error(f"[Failed to initialize browser: {e}")
         yield "error"
         return
 
@@ -210,16 +212,16 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
                         reader = response.content
                         browser_info = json.loads(await reader.read())
                         cdp_url = convert_ws_url(browser_info['ws_url'])
-                        logging.info(f"[{task_id}] Retrieved remote CDP URL: {cdp_url}")
+                        ctx.logger.info(f"[{task_id}] Retrieved remote CDP URL: {cdp_url}")
                     else:
                         error_text = await response.text()
                         raise Exception(f"Failed to get browser info. Status: {response.status}, Error: {error_text}")
         else:
             current_port = CURRENT_CDP_PORT
-            logging.info(f"Starting task with local browser on port: {current_port}")
+            ctx.logger.info(f"Starting task with local browser on port: {current_port}")
             cdp_url = f"http://127.0.0.1:{current_port}"
     except Exception as e:
-        logging.error(f"Error getting browser URL: {e}")
+        ctx.logger.error(f"Error getting browser URL: {e}")
         yield "error"
         return
 
@@ -250,7 +252,7 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
             browser_profile=browser_profile,
             cdp_url=cdp_url,
         )
-        logging.info(f"[{task_id}] Browser initialized with CDP URL: {cdp_url}")
+        ctx.logger.info(f"[{task_id}] Browser initialized with CDP URL: {cdp_url}")
 
         # 回调函数定义
         async def new_step_callback_wrapper(browser_state_summary: BrowserStateSummary, 
@@ -274,6 +276,11 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
                 content=data,
                 reply_content_type= ReplyContentType(content_type=content_type)
             ))
+        new_llm = ChatOpenAI(
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            model="deepseek-v3-1-250821",
+            api_key="60d5fa1f-c143-4647-9508-597ae0720047",
+        )
         # Agent 创建
         agent = MyAgent(
             task=ctx.query,
@@ -282,6 +289,9 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
             llm=ctx.llm,
             page_extraction_llm=ctx.llm,
             planner_llm=ctx.llm,
+            # llm=new_llm,
+            # page_extraction_llm=new_llm,
+            # planner_llm=new_llm,
             controller=MyController(),
             planner_interval=int(os.getenv("ARK_PLANNER_INTERVAL", "1")),
             override_system_message=ctx.system_prompt,
@@ -290,11 +300,11 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
             enable_memory=False,
         )
 
-        logging.info(f"[{task_id}] Agent initialized and ready to run")
+        ctx.logger.info(f"[{task_id}] Agent initialized and ready to run")
 
         # 启动 Agent 任务
         agent_task = asyncio.create_task(agent.run(20))
-        logging.info(f"[{task_id}] Agent started running")
+        ctx.logger.info(f"[{task_id}] Agent started running")
 
         # 事件流生成
         while True:
@@ -315,7 +325,7 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
                     continue
                     
             except Exception as e:
-                logging.error(f"[{task_id}] Error in event streaming: {e}")
+                ctx.logger.error(f"[{task_id}] Error in event streaming: {e}")
                 break
 
         # 等待 Agent 任务完成
@@ -346,7 +356,7 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
                     if isinstance(item, str)
                 )
             if final_result:
-                logging.info(f"[{task_id}] final_result: {final_result}")
+                ctx.logger.info(f"[{task_id}] final_result: {final_result}")
                 completion_event = genSSEData(
                     stream_id=ctx.conversation_id,
                     content= final_result,
@@ -361,10 +371,10 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
                 )
                 yield completion_event
 
-        logging.info(f"[{task_id}] Task completed successfully")
+        ctx.logger.info(f"[{task_id}] Task completed successfully")
 
     except Exception as e:
-        logging.error(f"[{task_id}] Agent execution failed: {e}")
+        ctx.logger.error(f"[{task_id}] Agent execution failed: {e}")
         yield genSSEData(
             stream_id=ctx.conversation_id,
             content=f'err:{e}',
@@ -391,10 +401,10 @@ async def sse_task(request: Messages):
     for message in request.messages:
         if message.role == "user":
             prompt = message.content
-            logging.debug(f"Found user message: {prompt}")
+            ctx.logger.debug(f"Found user message: {prompt}")
             break
 
-    logging.info(f"[{task_id}] Starting SSE task with prompt: {prompt}")
+    ctx.logger.info(f"[{task_id}] Starting SSE task with prompt: {prompt}")
 
     async def generate_sse_events():
         try:
@@ -421,7 +431,7 @@ async def sse_task(request: Messages):
                     yield f"data: {str(event)}\n\n"
                     
         except Exception as e:
-            logging.error(f"[{task_id}] Error in SSE generation: {e}")
+            ctx.logger.error(f"[{task_id}] Error in SSE generation: {e}")
             # 发送错误事件
             error_event = json.dumps({
                 "task_id": task_id,
@@ -439,7 +449,7 @@ async def sse_task(request: Messages):
             media_type="text/event-stream",
         )
     except Exception as e:
-        logging.error(f"[{task_id}] Error creating StreamingResponse: {e}")
+        ctx.logger.error(f"[{task_id}] Error creating StreamingResponse: {e}")
         # 返回错误响应
         return JSONResponse(
             status_code=500,
