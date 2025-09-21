@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field,ConfigDict
 from browser_use.browser.views import BrowserStateSummary
 from browser_agent.browser import start_local_browser,BrowserWrapper
 from browser_agent.browser_use_custom.controller.service import MyController
@@ -99,7 +99,10 @@ class RunBrowserUseAgentCtx(BaseModel):
     extend_prompt: str | None = None
     upload_service:Optional[UploadService] = None
     start_time:int = int(datetime.now().timestamp() * 1000)
-    logger: Logger = Field(default_factory=lambda: ctx.logger.getLogger(__name__))
+    logger: Logger = Field(default_factory=lambda: logging.getLogger(__name__))
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+    )
     
 def genSSEData(stream_id:str,
                content:str,
@@ -179,6 +182,7 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
     task_id = str(uuid.uuid4())
     event_queue = asyncio.Queue(maxsize=100)
     # 初始化日志
+    
     ctx.logger.info(f"RunBrowserUseAgent with query: {ctx.query},task_id:{task_id}")
     
     # 浏览器初始化
