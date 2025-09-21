@@ -124,75 +124,75 @@ class MyController(Controller):
             logger.info(msg)
             return ActionResult(extracted_content=msg, include_in_memory=True)
         # Login detection and waiting action
-        @self.registry.action(
-            _('Detects if current page requires login and waits for authentication to complete.Wait for login completion by monitoring URL changes.'),
-            param_model=WaitForLoginAction,
-        )
-        async def wait_for_login(params: WaitForLoginAction, browser_session: BrowserSession):
-            page = await browser_session.get_current_page()
+        # @self.registry.action(
+        #     _('Detects if current page requires login and waits for authentication to complete.Wait for login completion by monitoring URL changes.'),
+        #     param_model=WaitForLoginAction,
+        # )
+        # async def wait_for_login(params: WaitForLoginAction, browser_session: BrowserSession):
+        #     page = await browser_session.get_current_page()
             
-            # Get initial URL for comparison
-            initial_url = page.url
-            logger.info(_('🔐 Starting login detection. Initial URL: {url}').format(url=initial_url))
+        #     # Get initial URL for comparison
+        #     initial_url = page.url
+        #     logger.info(_('🔐 Starting login detection. Initial URL: {url}').format(url=initial_url))
             
-            # Wait for URL change indicating login completion
-            msg = _('🔐 Login page detected. Waiting for authentication completion (max {timeout}s)...').format(
-                timeout=params.timeout
-            )
-            logger.info(msg)
+        #     # Wait for URL change indicating login completion
+        #     msg = _('🔐 Login page detected. Waiting for authentication completion (max {timeout}s)...').format(
+        #         timeout=params.timeout
+        #     )
+        #     logger.info(msg)
             
-            final_url = await self._wait_for_url_change(
-                page, 
-                initial_url, 
-                params.timeout, 
-                params.check_interval
-            )
+        #     final_url = await self._wait_for_url_change(
+        #         page, 
+        #         initial_url, 
+        #         params.timeout, 
+        #         params.check_interval
+        #     )
             
-            if final_url and final_url != initial_url:
-                success_msg = _('✅ Login completed successfully! URL changed from {initial} to {final}').format(
-                    initial=initial_url, 
-                    final=final_url
-                )
-                logger.info(success_msg)
-                return ActionResult(
-                    extracted_content=success_msg,
-                    include_in_memory=True,
-                    success=True
-                )
-            else:
-                timeout_msg = _('⏰ Login timeout or no URL change detected after {timeout} seconds').format(
-                    timeout=params.timeout
-                )
-                logger.warning(timeout_msg)
-                return ActionResult(
-                    extracted_content=timeout_msg,
-                    include_in_memory=True,
-                    success=False
-                )
+        #     if final_url and final_url != initial_url:
+        #         success_msg = _('✅ Login completed successfully! URL changed from {initial} to {final}').format(
+        #             initial=initial_url, 
+        #             final=final_url
+        #         )
+        #         logger.info(success_msg)
+        #         return ActionResult(
+        #             extracted_content=success_msg,
+        #             include_in_memory=True,
+        #             success=True
+        #         )
+        #     else:
+        #         timeout_msg = _('⏰ Login timeout or no URL change detected after {timeout} seconds').format(
+        #             timeout=params.timeout
+        #         )
+        #         logger.warning(timeout_msg)
+        #         return ActionResult(
+        #             extracted_content=timeout_msg,
+        #             include_in_memory=True,
+        #             success=False
+        #         )
     
-    async def _wait_for_url_change(
-        self, 
-        page: Page, 
-        initial_url: str, 
-        timeout: int, 
-        check_interval: int
-    ) -> Optional[str]:
-        """Wait for URL change indicating login completion."""
-        start_time = asyncio.get_event_loop().time()
+    # async def _wait_for_url_change(
+    #     self, 
+    #     page: Page, 
+    #     initial_url: str, 
+    #     timeout: int, 
+    #     check_interval: int
+    # ) -> Optional[str]:
+    #     """Wait for URL change indicating login completion."""
+    #     start_time = asyncio.get_event_loop().time()
         
-        while (asyncio.get_event_loop().time() - start_time) < timeout:
-            try:
-                current_url = page.url
+    #     while (asyncio.get_event_loop().time() - start_time) < timeout:
+    #         try:
+    #             current_url = page.url
                 
-                # If URL has changed, return the new URL
-                if current_url != initial_url:
-                    return current_url
+    #             # If URL has changed, return the new URL
+    #             if current_url != initial_url:
+    #                 return current_url
                 
-                # Wait before checking again
-                await asyncio.sleep(check_interval)
+    #             # Wait before checking again
+    #             await asyncio.sleep(check_interval)
                 
-            except Exception as e:
-                logger.warning(_('Error checking URL change: {error}').format(error=str(e)))
-                await asyncio.sleep(check_interval)
+    #         except Exception as e:
+    #             logger.warning(_('Error checking URL change: {error}').format(error=str(e)))
+    #             await asyncio.sleep(check_interval)
         
-        return None  # Timeout reached without URL change
+    #     return None  # Timeout reached without URL change

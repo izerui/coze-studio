@@ -9,7 +9,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from typing import Dict,List,Union
-import tempfile
 import asyncio
 import json
 import logging
@@ -30,6 +29,7 @@ from browser_agent.browser import start_local_browser,BrowserWrapper
 from browser_agent.browser_use_custom.controller.service import MyController
 from browser_agent.utils import enforce_log_format
 from browser_use import Agent
+from browser_agent.browser_use_custom.agent.service import MyAgent
 from browser_agent.browser_use_custom.i18n import _, set_language
 from browser_use.agent.views import (
     AgentOutput,
@@ -42,6 +42,7 @@ from stream_helper.schema import FileChangeInfo,FileChangeType,FileChangeData
 import base64
 from langchain_core.language_models.chat_models import BaseChatModel
 from datetime import datetime
+from langchain_openai import ChatOpenAI
 app = FastAPI()
 load_dotenv()
 
@@ -175,7 +176,6 @@ async def get_data_files(directory: str | Path) -> List[Dict[str, str]]:
 async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEData, None]:
     task_id = str(uuid.uuid4())
     event_queue = asyncio.Queue(maxsize=100)
-    base_tmp = tempfile.gettempdir()  # e.g., /tmp on Unix
     # 初始化日志
     logging.info(f"RunBrowserUseAgent with query: {ctx.query},task_id:{task_id}")
     
@@ -227,7 +227,6 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
     base_dir = os.path.join("videos", task_id)
     snapshot_dir = os.path.join(base_dir, "snapshots")
     Path(snapshot_dir).mkdir(parents=True, exist_ok=True)
-    file_dir = os
     browser_session = None
     agent = None
     agent_task = None
@@ -261,7 +260,7 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
             for ac in model_output.action:
                 action_data = ac.model_dump(exclude_unset=True)
                 action_name = next(iter(action_data.keys()))
-                if action_name == 'wait_for_login':
+                if action_name == 'pause':
                     islogin = True
             data = ''
             content_type = ContentTypeInReplyEnum.TXT
@@ -269,26 +268,26 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
                 data = data + MessageActionInfo(actions=[MessageActionItem()]).model_dump_json()
                 content_type = ContentTypeInReplyEnum.ACTION_INFO
             else: 
-                data = data + model_output.next_goal
+                data = data + model_output.current_state.next_goal or ''
             await event_queue.put(genSSEData(
                 stream_id=ctx.conversation_id,
                 content=data,
                 reply_content_type= ReplyContentType(content_type=content_type)
             ))
-
         # Agent 创建
-        agent = Agent(
+        agent = MyAgent(
             task=ctx.query,
-            llm=ctx.llm,
-            tool_calling_method=os.getenv("ARK_FUNCTION_CALLING", "function_calling").lower(),
             browser_session=browser_session,
             register_new_step_callback=new_step_callback_wrapper,
-            use_vision=os.getenv("ARK_USE_VISION", "False").lower() == "true",
-            use_vision_for_planner=os.getenv("ARK_USE_VISION", "False").lower() == "true",
+            llm=ctx.llm,
             page_extraction_llm=ctx.llm,
+            planner_llm=ctx.llm,
             controller=MyController(),
+            planner_interval=int(os.getenv("ARK_PLANNER_INTERVAL", "1")),
             override_system_message=ctx.system_prompt,
             extend_planner_system_message=ctx.extend_prompt,
+            language='zh',
+            enable_memory=False,
         )
 
         logging.info(f"[{task_id}] Agent initialized and ready to run")
