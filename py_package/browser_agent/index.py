@@ -44,7 +44,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from datetime import datetime
 from langchain_openai import ChatOpenAI
 from logging import Logger
-from browser_agent.browser_use_custom.controller.screen import wait_for_visual_change,WaitForVisualChangeAction
+from browser_agent.browser_use_custom.controller.screen import wait_for_visual_change,WaitForVisualChangeAction,VisualChangeDetector
 app = FastAPI()
 load_dotenv()
 
@@ -258,7 +258,16 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
             cdp_url=cdp_url,
         )
         ctx.logger.info(f"[{task_id}] Browser initialized with CDP URL: {cdp_url}")
-
+        current_screenshot = None
+        async def on_step_end(agent):
+            nonlocal current_screenshot
+            try:
+                ctx.logger.info("Agent step end")
+                page = await browser_session.get_current_page()
+                detector = VisualChangeDetector()
+                current_screenshot = await detector.capture_screenshot(page)
+            except Exception as e:
+                ctx.logger.error(f"Error in on_step_end: {e}")
         # 回调函数定义
         async def new_step_callback_wrapper(browser_state_summary: BrowserStateSummary, 
                                           model_output: AgentOutput, 
@@ -284,12 +293,14 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
                 reply_content_type= ReplyContentType(content_type=content_type)
             ))
             if islogin:
+                nonlocal current_screenshot
                 has_change, _, _ = await wait_for_visual_change(
                     params=WaitForVisualChangeAction(
                         timeout=300,
-                        similarity_threshold=0.85 
+                        similarity_threshold=0.85,
                     ),
                     browser_session=browser_session,
+                    initial_screenshot=current_screenshot,
                     )
                 if has_change:
                     ctx.logger.info('detected visual change,browser task resume')
@@ -305,11 +316,6 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
                     response_for_model=data,
                     reply_content_type= ReplyContentType(content_type=ContentTypeInReplyEnum.TXT,reply_type=ReplyTypeInReplyEnum.ANSWER)
                 ))
-        new_llm = ChatOpenAI(
-            base_url="https://ark.cn-beijing.volces.com/api/v3",
-            model="deepseek-v3-1-250821",
-            api_key="60d5fa1f-c143-4647-9508-597ae0720047",
-        )
         # Agent 创建
         agent = MyAgent(
             task=ctx.query,
@@ -318,9 +324,6 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
             llm=ctx.llm,
             page_extraction_llm=ctx.llm,
             planner_llm=ctx.llm,
-            # llm=new_llm,
-            # page_extraction_llm=new_llm,
-            # planner_llm=new_llm,
             controller=MyController(),
             planner_interval=int(os.getenv("ARK_PLANNER_INTERVAL", "1")),
             override_system_message=ctx.system_prompt,
@@ -330,9 +333,8 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
         )
 
         ctx.logger.info(f"[{task_id}] Agent initialized and ready to run")
-
         # 启动 Agent 任务
-        agent_task = asyncio.create_task(agent.run(20))
+        agent_task = asyncio.create_task(agent.run(20,on_step_end=on_step_end))
         ctx.logger.info(f"[{task_id}] Agent started running")
 
         # 事件流生成
