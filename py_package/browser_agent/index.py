@@ -260,12 +260,13 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
         ctx.logger.info(f"[{task_id}] Browser initialized with CDP URL: {cdp_url}")
         current_screenshot = None
         async def on_step_end(agent):
-            nonlocal current_screenshot
             try:
+                nonlocal current_screenshot
                 ctx.logger.info("Agent step end")
                 page = await browser_session.get_current_page()
                 detector = VisualChangeDetector()
                 current_screenshot = await detector.capture_screenshot(page)
+                ctx.logger.info(f'captured screenshot success')
             except Exception as e:
                 ctx.logger.error(f"Error in on_step_end: {e}")
         # 回调函数定义
