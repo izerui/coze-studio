@@ -44,6 +44,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from datetime import datetime
 from langchain_openai import ChatOpenAI
 from logging import Logger
+from browser_agent.browser_use_custom.controller.screen import wait_for_visual_change,WaitForVisualChangeAction
 app = FastAPI()
 load_dotenv()
 
@@ -268,6 +269,8 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
                 action_name = next(iter(action_data.keys()))
                 if action_name == 'pause':
                     islogin = True
+                    ctx.logger.info("pause action detected, browser task pause")
+                    agent.pause()
             data = ''
             content_type = ContentTypeInReplyEnum.TXT
             if islogin:
@@ -280,6 +283,28 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
                 content=data,
                 reply_content_type= ReplyContentType(content_type=content_type)
             ))
+            if islogin:
+                has_change, _, _ = await wait_for_visual_change(
+                    params=WaitForVisualChangeAction(
+                        timeout=300,
+                        similarity_threshold=0.85 
+                    ),
+                    browser_session=browser_session,
+                    )
+                if has_change:
+                    ctx.logger.info('detected visual change,browser task resume')
+                    agent.resume()
+                data = 'timeout: no visual change detected during login'
+                await event_queue.put(genSSEData(
+                    stream_id=ctx.conversation_id,
+                    content=data,
+                    output_mode=OutputModeEnum.NOT_STREAM,
+                    is_finish=True,
+                    is_last_msg=True,
+                    is_last_packet_in_msg=True,
+                    response_for_model=data,
+                    reply_content_type= ReplyContentType(content_type=ContentTypeInReplyEnum.TXT,reply_type=ReplyTypeInReplyEnum.ANSWER)
+                ))
         new_llm = ChatOpenAI(
             base_url="https://ark.cn-beijing.volces.com/api/v3",
             model="deepseek-v3-1-250821",
@@ -405,10 +430,10 @@ async def sse_task(request: Messages):
     for message in request.messages:
         if message.role == "user":
             prompt = message.content
-            ctx.logger.debug(f"Found user message: {prompt}")
+            logging.debug(f"Found user message: {prompt}")
             break
 
-    ctx.logger.info(f"[{task_id}] Starting SSE task with prompt: {prompt}")
+    logging.info(f"[{task_id}] Starting SSE task with prompt: {prompt}")
 
     async def generate_sse_events():
         try:
@@ -435,7 +460,7 @@ async def sse_task(request: Messages):
                     yield f"data: {str(event)}\n\n"
                     
         except Exception as e:
-            ctx.logger.error(f"[{task_id}] Error in SSE generation: {e}")
+            logging.error(f"[{task_id}] Error in SSE generation: {e}")
             # 发送错误事件
             error_event = json.dumps({
                 "task_id": task_id,
@@ -453,7 +478,7 @@ async def sse_task(request: Messages):
             media_type="text/event-stream",
         )
     except Exception as e:
-        ctx.logger.error(f"[{task_id}] Error creating StreamingResponse: {e}")
+        logging.error(f"[{task_id}] Error creating StreamingResponse: {e}")
         # 返回错误响应
         return JSONResponse(
             status_code=500,

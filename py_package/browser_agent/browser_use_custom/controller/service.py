@@ -125,17 +125,10 @@ class MyController(Controller):
             _('Pause agent'),
             param_model=PauseAction,
         )
-        async def pause(params: PauseAction, browser_session: BrowserSession):
-            has_change, _, _ = await wait_for_visual_change(
-                params=WaitForVisualChangeAction(
-                    timeout=300,
-                    similarity_threshold=0.85 
-                ),
-                browser_session=browser_session,
-            )
-            if has_change:
-                logger.info('detected visual change')
-            return ActionResult(extracted_content='paused', include_in_memory=True)
+        async def pause(params: PauseAction):
+            msg = _('👩 Pause agent, reason: {reason}').format(reason=params.reason)
+            logger.info(msg)
+            return ActionResult(extracted_content=msg, include_in_memory=True)
         # Login detection and waiting action
         # @self.registry.action(
         #     _('Detects if current page requires login and waits for authentication to complete.Wait for login completion by monitoring URL changes.'),
