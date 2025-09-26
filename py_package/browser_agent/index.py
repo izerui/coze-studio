@@ -70,13 +70,6 @@ CURRENT_CDP_PORT = 9222
 browser_session_endpoint = None
 set_language(os.getenv("LANGUAGE", "en"))
 
-class BrowserSessionRe(BrowserSession):
-    # region - Browser Actions
-	@time_execution_async('--take_screenshot')
-	async def take_screenshot(self, full_page: bool = False) -> str:
-		return ''
-	# endregion
-
 class Message(BaseModel):
     role: str
     content: str
@@ -280,7 +273,7 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
                 'x-use-ppe':'1',
             },
         )
-        browser_session = BrowserSessionRe(
+        browser_session = BrowserSession(
             browser_profile=browser_profile,
             cdp_url=cdp_url,
         )
