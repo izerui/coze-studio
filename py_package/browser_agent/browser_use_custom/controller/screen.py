@@ -37,7 +37,7 @@ class VisualChangeDetector:
             w, h = img.size
             new_h = int(h * (self.resize_width / w))
             img = img.resize((self.resize_width, new_h))
-        logger.info(f'Captured screenshot with size {img.size}')
+        logger.info(f'Captured screenshot base64 {screenshot_bytes}')
         return img.convert('RGB')  # 确保RGB模式
 
     def calculate_change(
@@ -100,7 +100,7 @@ class VisualChangeDetector:
         if reference_img is None:
             page = await browser_session.get_current_page()
             reference_img = await self.capture_screenshot(page)
-        
+        logger.info("start detect change")
         for attempt in range(max_attempts):
             await asyncio.sleep(attempt_interval)
             
@@ -110,15 +110,13 @@ class VisualChangeDetector:
             
             # 计算变化
             similarity, diff_img = self.calculate_change(reference_img, current_img)
-            
+            logger.info(f"Attempt {attempt + 1}: 相似度 {similarity:.2f}, 变化像素 {np.sum(np.array(diff_img) > 0)}")
             # 判断是否显著变化
             if similarity < self.similarity_threshold:
                 diff_pixels = np.sum(np.array(diff_img) > 0)
                 if diff_pixels > self.pixel_threshold:
                     logger.info(f"视觉变化 detected (相似度: {similarity:.2f}, 变化像素: {diff_pixels})")
                     return True, reference_img, diff_img
-            
-            reference_img = current_img  # 更新基准图
         
         return False, reference_img, None
 
