@@ -288,7 +288,7 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
         async def on_step_end(agent):
             try:
                 ctx.logger.info("Agent step end")
-                page = await browser_session.get_current_page()
+                page = await agent.browser_session.get_current_page()
                 detector = VisualChangeDetector()
                 current_screenshot = await detector.capture_screenshot(page)
                 agent.context = {'current_screenshot':current_screenshot}
@@ -332,7 +332,7 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
                             timeout=300,
                             similarity_threshold=0.85,
                         ),
-                        browser_session=browser_session,
+                        browser_session=agent.browser_session,
                         initial_screenshot=current_screenshot,
                         )
                     if has_change:

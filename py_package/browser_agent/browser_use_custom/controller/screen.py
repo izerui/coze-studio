@@ -55,19 +55,26 @@ class VisualChangeDetector:
         if img1.size != img2.size:
             img2 = img2.resize(img1.size)
         
-        # 转换为numpy数组
-        arr1 = np.array(img1)
-        arr2 = np.array(img2)
-        
-        # 计算绝对差异
+        arr1 = np.array(img1)  # shape: (height, width, 3)
+        arr2 = np.array(img2)  # shape: (height, width, 3)
+
+        # 计算绝对差异（每个通道单独计算）
         diff = np.abs(arr1.astype(int) - arr2.astype(int))
-        changed_pixels = np.sum(diff > 0)  # 变化像素总数
-        total_pixels = arr1.size // 3      # RGB通道
-        
+
+        # 变化像素计算（任一通道有变化即视为该像素变化）
+        # 先检查每个像素的3个通道是否有变化
+        pixel_changed = np.any(diff > 0, axis=2)  # shape: (height, width)
+        changed_pixels = np.sum(pixel_changed)    # 变化像素总数
+
+        # 总像素数（不需要除以3，因为pixel_changed已经是像素级别的判断）
+        total_pixels = arr1.shape[0] * arr1.shape[1]
+
         # 生成差异图（可视化用）
         diff_img = ImageChops.difference(img1, img2)
+
+        # 计算相似度
         similarity = 1 - (changed_pixels / total_pixels)
-        
+
         return similarity, diff_img
 
     async def detect_change(
