@@ -197,7 +197,17 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
             browser_wrapper = BrowserWrapper(None, None, None, 'id', ctx.browser_session_endpoint)
     except Exception as e:
         ctx.logger.error(f"[Failed to initialize browser: {e}")
-        yield "error"
+        yield genSSEData(
+            stream_id=ctx.conversation_id,
+            content=f'init browser_wrapper err:{e}',
+            is_finish=True,
+            is_last_msg=True,
+            is_last_packet_in_msg=True,
+            output_mode=OutputModeEnum.NOT_STREAM,
+            return_type=ReturnTypeEnum.MODEL,
+            response_for_model=f'init browser_wrapper err:{e}',
+            reply_content_type=ReplyContentType(content_type=ContentTypeInReplyEnum.TXT,reply_type=ReplyTypeInReplyEnum.ANSWER)
+        )
         return
 
     # CDP URL 获取
@@ -227,7 +237,17 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
             cdp_url = f"http://127.0.0.1:{current_port}"
     except Exception as e:
         ctx.logger.error(f"Error getting browser URL: {e}")
-        yield "error"
+        yield genSSEData(
+            stream_id=ctx.conversation_id,
+            content=f'Failed to get browser cdp_url:{e}',
+            is_finish=True,
+            is_last_msg=True,
+            is_last_packet_in_msg=True,
+            output_mode=OutputModeEnum.NOT_STREAM,
+            return_type=ReturnTypeEnum.MODEL,
+            response_for_model=f'',
+            reply_content_type=ReplyContentType(content_type=ContentTypeInReplyEnum.TXT,reply_type=ReplyTypeInReplyEnum.ANSWER)
+        )
         return
 
     # 目录创建
@@ -246,7 +266,7 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
             disable_security=True,
             highlight_elements=False,
             wait_between_actions=1,
-            
+            keep_alive=False,
             headers={
                 'x-sandbox-taskid':ctx.conversation_id,
                 'x-tt-env':'ppe_coze_sandbox',
@@ -272,52 +292,58 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
         async def new_step_callback_wrapper(browser_state_summary: BrowserStateSummary, 
                                           model_output: AgentOutput, 
                                           step_number: int):
-            islogin = False
-            for ac in model_output.action:
-                action_data = ac.model_dump(exclude_unset=True)
-                action_name = next(iter(action_data.keys()))
-                if action_name == 'pause':
-                    islogin = True
-                    ctx.logger.info("pause action detected, browser task pause")
-                    agent.pause()
-            data = ''
-            content_type = ContentTypeInReplyEnum.TXT
-            if islogin:
-                data = data + MessageActionInfo(actions=[MessageActionItem()]).model_dump_json()
-                content_type = ContentTypeInReplyEnum.ACTION_INFO
-            else: 
-                data = data + model_output.current_state.next_goal or ''
-            await event_queue.put(genSSEData(
-                stream_id=ctx.conversation_id,
-                content=data,
-                reply_content_type= ReplyContentType(content_type=content_type)
-            ))
-            if islogin:
-                current_screenshot = agent.context.get('current_screenshot',None)
-                if current_screenshot:
-                    ctx.logger.info(f'current screenshot exists')
-                has_change, _, _ = await wait_for_visual_change(
-                    params=WaitForVisualChangeAction(
-                        timeout=300,
-                        similarity_threshold=0.85,
-                    ),
-                    browser_session=browser_session,
-                    initial_screenshot=current_screenshot,
-                    )
-                if has_change:
-                    ctx.logger.info('detected visual change,browser task resume')
-                    agent.resume()
-                data = 'timeout: no visual change detected during login'
+            try:
+                islogin = False
+                for ac in model_output.action:
+                    try:
+                        action_data = ac.model_dump(exclude_unset=True)
+                        action_name = next(iter(action_data.keys()))
+                        if action_name == 'pause':
+                            islogin = True
+                            ctx.logger.info("pause action detected, browser task pause")
+                            agent.pause()
+                    except Exception as e:
+                        ctx.logger.error(f"Error in new_step_callback_wrapper: {e}")
+                data = ''
+                content_type = ContentTypeInReplyEnum.TXT
+                if islogin:
+                    data = data + MessageActionInfo(actions=[MessageActionItem()]).model_dump_json()
+                    content_type = ContentTypeInReplyEnum.ACTION_INFO
+                else: 
+                    data = data + model_output.current_state.next_goal or ''
                 await event_queue.put(genSSEData(
                     stream_id=ctx.conversation_id,
                     content=data,
-                    output_mode=OutputModeEnum.NOT_STREAM,
-                    is_finish=True,
-                    is_last_msg=True,
-                    is_last_packet_in_msg=True,
-                    response_for_model=data,
-                    reply_content_type= ReplyContentType(content_type=ContentTypeInReplyEnum.TXT,reply_type=ReplyTypeInReplyEnum.ANSWER)
+                    reply_content_type= ReplyContentType(content_type=content_type)
                 ))
+                if islogin:
+                    current_screenshot = agent.context.get('current_screenshot',None)
+                    if current_screenshot:
+                        ctx.logger.info(f'current screenshot exists')
+                    has_change, _, _ = await wait_for_visual_change(
+                        params=WaitForVisualChangeAction(
+                            timeout=300,
+                            similarity_threshold=0.85,
+                        ),
+                        browser_session=browser_session,
+                        initial_screenshot=current_screenshot,
+                        )
+                    if has_change:
+                        ctx.logger.info('detected visual change,browser task resume')
+                        agent.resume()
+                    data = 'timeout: no visual change detected during login'
+                    await event_queue.put(genSSEData(
+                        stream_id=ctx.conversation_id,
+                        content=data,
+                        output_mode=OutputModeEnum.NOT_STREAM,
+                        is_finish=True,
+                        is_last_msg=True,
+                        is_last_packet_in_msg=True,
+                        response_for_model=data,
+                        reply_content_type= ReplyContentType(content_type=ContentTypeInReplyEnum.TXT,reply_type=ReplyTypeInReplyEnum.ANSWER)
+                    ))
+            except Exception as e:
+                ctx.logger.error(f"Error in new_step_callback_wrapper: {e}")
         # Agent 创建
         agent = MyAgent(
             task=ctx.query,
@@ -418,7 +444,16 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
             response_for_model=f'err:{e}',
             reply_content_type=ReplyContentType(content_type=ContentTypeInReplyEnum.TXT,reply_type=ReplyTypeInReplyEnum.ANSWER)
         )
-
+    finally:
+        if agent:
+            if agent.browser_session:
+                if agent.browser_session.browser_context:
+                    await agent.browser_session.browser_context.close()
+                if agent.browser_session.browser:
+                    await agent.browser_session.browser.close()
+            await agent.pause()
+            agent.browser_session.cdp_url = None
+            ctx.logger.info('agent close success')
 
 @app.get("/")
 async def root():
