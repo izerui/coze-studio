@@ -45,6 +45,7 @@ from datetime import datetime
 from langchain_openai import ChatOpenAI
 from logging import Logger
 from browser_agent.browser_use_custom.controller.screen import wait_for_visual_change,WaitForVisualChangeAction,VisualChangeDetector
+from browser_use.utils import match_url_with_domain_pattern, time_execution_async, time_execution_sync
 app = FastAPI()
 load_dotenv()
 
@@ -69,6 +70,12 @@ CURRENT_CDP_PORT = 9222
 browser_session_endpoint = None
 set_language(os.getenv("LANGUAGE", "en"))
 
+class BrowserSessionRe(BrowserSession):
+    # region - Browser Actions
+	@time_execution_async('--take_screenshot')
+	async def take_screenshot(self, full_page: bool = False) -> str:
+		return ''
+	# endregion
 
 class Message(BaseModel):
     role: str
@@ -273,7 +280,7 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
                 'x-use-ppe':'1',
             },
         )
-        browser_session = BrowserSession(
+        browser_session = BrowserSessionRe(
             browser_profile=browser_profile,
             cdp_url=cdp_url,
         )
