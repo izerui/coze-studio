@@ -37,7 +37,6 @@ class VisualChangeDetector:
             w, h = img.size
             new_h = int(h * (self.resize_width / w))
             img = img.resize((self.resize_width, new_h))
-        logger.info(f'Captured screenshot base64 {screenshot_bytes}')
         return img.convert('RGB')  # 确保RGB模式
 
     def calculate_change(

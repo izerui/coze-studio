@@ -318,9 +318,11 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
                     reply_content_type= ReplyContentType(content_type=content_type)
                 ))
                 if islogin:
-                    current_screenshot = agent.context.get('current_screenshot',None)
-                    if current_screenshot:
-                        ctx.logger.info(f'current screenshot exists')
+                    current_screenshot = None
+                    if agent.context: 
+                        current_screenshot = agent.context.get('current_screenshot',None)
+                        if current_screenshot:
+                            ctx.logger.info(f'current screenshot exists')
                     has_change, _, _ = await wait_for_visual_change(
                         params=WaitForVisualChangeAction(
                             timeout=300,
