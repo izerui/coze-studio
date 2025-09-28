@@ -304,6 +304,7 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
                             agent.pause()
                     except Exception as e:
                         ctx.logger.error(f"Error in new_step_callback_wrapper: {e}")
+                        agent.resume()
                 data = ''
                 content_type = ContentTypeInReplyEnum.TXT
                 if islogin:
@@ -344,6 +345,7 @@ async def RunBrowserUseAgent(ctx: RunBrowserUseAgentCtx) -> AsyncGenerator[SSEDa
                     ))
             except Exception as e:
                 ctx.logger.error(f"Error in new_step_callback_wrapper: {e}")
+                agent.resume()
         # Agent 创建
         agent = MyAgent(
             task=ctx.query,
