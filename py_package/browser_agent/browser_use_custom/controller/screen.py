@@ -29,7 +29,7 @@ class VisualChangeDetector:
 
     async def capture_screenshot(self, page) -> Image.Image:
         """捕获页面截图（自动优化）"""
-        screenshot_bytes = await page.screenshot(timeout=5000,type='jpeg',quality=50,full_page=False,animations='disabled')
+        screenshot_bytes = await page.screenshot(timeout=10000,type='jpeg',quality=50,full_page=False,animations='disabled')
         img = Image.open(io.BytesIO(screenshot_bytes))
         
         # 统一缩放尺寸（提升比对性能）
